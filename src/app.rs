@@ -2,14 +2,18 @@
 
 use crate::config::Config;
 use crate::fl;
+use crate::package::Package;
+use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
 use cosmic::app::{Command, Core};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Alignment, Length, Subscription};
-use cosmic::widget::{self, icon, menu, nav_bar};
-use cosmic::{cosmic_theme, theme, Application, ApplicationExt, Apply, Element};
+use cosmic::prelude::CollectionWidget;
+use cosmic::widget::{self, menu, settings};
+use cosmic::{cosmic_theme, theme, Application, ApplicationExt, Element};
 use futures_util::SinkExt;
 use std::collections::HashMap;
+use std::path::Path;
 
 const REPOSITORY: &str = "https://github.com/cosmic-utils/wizard";
 const APP_ICON: &[u8] = include_bytes!("../res/icons/hicolor/scalable/apps/icon.svg");
@@ -21,12 +25,12 @@ pub struct AppModel {
     core: Core,
     /// Display a context drawer with the designated page if defined.
     context_page: ContextPage,
-    /// Contains items assigned to the nav bar panel.
-    nav: nav_bar::Model,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     // Configuration data that persists between application runs.
     config: Config,
+
+    package: Option<Package>,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -36,6 +40,9 @@ pub enum Message {
     SubscriptionChannel,
     ToggleContextPage(ContextPage),
     UpdateConfig(Config),
+    SelectFile,
+    UpdatePackage(Option<Package>),
+    InstallPackage(Package),
 }
 
 /// Create a COSMIC application from the app model
@@ -62,30 +69,10 @@ impl Application for AppModel {
 
     /// Initializes the application with any given flags and startup commands.
     fn init(core: Core, _flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        // Create a nav bar with three page items.
-        let mut nav = nav_bar::Model::default();
-
-        nav.insert()
-            .text(fl!("page-id", num = 1))
-            .data::<Page>(Page::Page1)
-            .icon(icon::from_name("applications-science-symbolic"))
-            .activate();
-
-        nav.insert()
-            .text(fl!("page-id", num = 2))
-            .data::<Page>(Page::Page2)
-            .icon(icon::from_name("applications-system-symbolic"));
-
-        nav.insert()
-            .text(fl!("page-id", num = 3))
-            .data::<Page>(Page::Page3)
-            .icon(icon::from_name("applications-games-symbolic"));
-
         // Construct the app model with the runtime's core.
         let mut app = AppModel {
             core,
             context_page: ContextPage::default(),
-            nav,
             key_binds: HashMap::new(),
             // Optional configuration file for an application.
             config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
@@ -100,6 +87,8 @@ impl Application for AppModel {
                     }
                 })
                 .unwrap_or_default(),
+
+            package: None,
         };
 
         // Create a startup command that sets the window title.
@@ -121,11 +110,6 @@ impl Application for AppModel {
         vec![menu_bar.into()]
     }
 
-    /// Enables the COSMIC application to create a nav bar with this model.
-    fn nav_model(&self) -> Option<&nav_bar::Model> {
-        Some(&self.nav)
-    }
-
     /// Display a context drawer if the context page is requested.
     fn context_drawer(&self) -> Option<Element<Self::Message>> {
         if !self.core.window.show_context {
@@ -142,8 +126,43 @@ impl Application for AppModel {
     /// Application events will be processed through the view. Any messages emitted by
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<Self::Message> {
-        widget::text::title1(fl!("welcome"))
-            .apply(widget::container)
+        let filechooser_btn =
+            widget::button::suggested(fl!("select-file")).on_press(Message::SelectFile);
+
+        let title = widget::text::title1(fl!("app-title"));
+
+        let install_btn: Option<Element<'_, _>> = self.package.clone().map(|package| {
+            widget::button::suggested(fl!("install-file"))
+                .on_press(Message::InstallPackage(package))
+                .into()
+        });
+
+        let header = widget::container(
+            widget::row()
+                .spacing(100)
+                .push(filechooser_btn)
+                .push(title)
+                .push_maybe(install_btn),
+        )
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
+
+        let details: Option<Element<'_, _>> = self.package.clone().map(|package| {
+            let column = widget::list_column()
+                .add(settings::item("Name", widget::text(package.name)))
+                .add(settings::item("Path", widget::text(package.path)));
+
+            widget::container(widget::container(column).max_width(1000))
+                .align_x(Horizontal::Center)
+                .into()
+        });
+
+        let content = widget::column()
+            .spacing(16)
+            .push(header)
+            .push_maybe(details);
+
+        widget::container(content)
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Horizontal::Center)
@@ -214,16 +233,59 @@ impl Application for AppModel {
             Message::UpdateConfig(config) => {
                 self.config = config;
             }
+
+            Message::SelectFile => {
+                let future = async {
+                    if let Ok(request) = SelectedFiles::open_file()
+                        .title("Select Package to install")
+                        .accept_label("Read")
+                        .modal(true)
+                        .filter(
+                            FileFilter::new("*.deb")
+                                .mimetype("application/vnd.debian.binary-package"),
+                        )
+                        .send()
+                        .await
+                    {
+                        if let Ok(file) = request.response() {
+                            return match file.uris().first() {
+                                Some(url) => {
+                                    let path = url.path().to_string();
+                                    let name =
+                                        if let Some(os_filename) = Path::new(&path).file_name() {
+                                            match os_filename.to_str() {
+                                                Some(name) => name.to_string(),
+                                                None => String::new(),
+                                            }
+                                        } else {
+                                            String::new()
+                                        };
+
+                                    Some(Package { path, name })
+                                }
+                                None => None,
+                            };
+                        }
+                    }
+
+                    None
+                };
+
+                return Command::perform(future, |package| {
+                    cosmic::app::Message::App(Message::UpdatePackage(package))
+                });
+            }
+
+            Message::UpdatePackage(package) => {
+                self.package = package;
+            }
+
+            Message::InstallPackage(package) => {
+                println!("Installing... {:?}", package);
+            }
         }
+
         Command::none()
-    }
-
-    /// Called when a nav item is selected.
-    fn on_nav_select(&mut self, id: nav_bar::Id) -> Command<Self::Message> {
-        // Activate the page in the model.
-        self.nav.activate(id);
-
-        self.update_title()
     }
 }
 
@@ -251,22 +313,9 @@ impl AppModel {
 
     /// Updates the header and window titles.
     pub fn update_title(&mut self) -> Command<Message> {
-        let mut window_title = fl!("app-title");
-
-        if let Some(page) = self.nav.text(self.nav.active()) {
-            window_title.push_str(" — ");
-            window_title.push_str(page);
-        }
-
+        let window_title = fl!("app-title");
         self.set_window_title(window_title)
     }
-}
-
-/// The page to display in the application.
-pub enum Page {
-    Page1,
-    Page2,
-    Page3,
 }
 
 /// The context page to display in the context drawer.

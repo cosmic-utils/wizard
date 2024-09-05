@@ -1,5 +1,6 @@
 app-title = Wizard
 about = About
 view = View
-welcome = Welcome to COSMIC! ✨
+select-file = Pick Package!
+install-file = Install Package!
 page-id = Page { $num }
