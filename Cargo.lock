@@ -999,20 +999,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmic-app-template"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "i18n-embed",
- "i18n-embed-fl",
- "libcosmic",
- "once_cell",
- "open",
- "rust-embed",
- "tokio",
-]
-
-[[package]]
 name = "cosmic-config"
 version = "0.1.0"
 source = "git+https://github.com/pop-os/libcosmic.git#16c1265535a0a4d9e1e5ded2f39096dc8f144e9c"
@@ -5623,6 +5609,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3c52e9c97a68071b23e836c9380edae937f17b9c4667bd021973efc689f618d"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "wizard"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "i18n-embed",
+ "i18n-embed-fl",
+ "libcosmic",
+ "once_cell",
+ "open",
+ "rust-embed",
+ "tokio",
 ]
 
 [[package]]

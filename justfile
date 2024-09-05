@@ -1,5 +1,5 @@
-name := 'cosmic-app-template'
-appid := 'com.example.CosmicAppTemplate'
+name := 'wizard'
+appid := 'io.github.cosmicUtils.Wizard'
 
 rootdir := ''
 prefix := '/usr'
