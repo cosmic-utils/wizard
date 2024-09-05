@@ -127,9 +127,7 @@ impl Application for AppModel {
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<Self::Message> {
         let filechooser_btn =
-            widget::button::suggested(fl!("select-file")).on_press(Message::SelectFile);
-
-        let title = widget::text::title1(fl!("app-title"));
+            widget::button::standard(fl!("select-file")).on_press(Message::SelectFile);
 
         let install_btn: Option<Element<'_, _>> = self.package.clone().map(|package| {
             widget::button::suggested(fl!("install-file"))
@@ -139,9 +137,8 @@ impl Application for AppModel {
 
         let header = widget::container(
             widget::row()
-                .spacing(100)
+                .spacing(60)
                 .push(filechooser_btn)
-                .push(title)
                 .push_maybe(install_btn),
         )
         .width(Length::Fill)
@@ -152,7 +149,7 @@ impl Application for AppModel {
                 .add(settings::item("Name", widget::text(package.name)))
                 .add(settings::item("Path", widget::text(package.path)));
 
-            widget::container(widget::container(column).max_width(1000))
+            widget::container(widget::container(column).max_width(800))
                 .align_x(Horizontal::Center)
                 .into()
         });
