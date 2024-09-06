@@ -2,9 +2,9 @@
 
 use crate::config::Config;
 use crate::fl;
-use crate::package::Package;
+use crate::package::{grant_permissions, Package};
 use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
-use cosmic::app::{Command, Core};
+use cosmic::app::{command, Command, Core};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Alignment, Length, Subscription};
@@ -31,6 +31,7 @@ pub struct AppModel {
     config: Config,
 
     package: Option<Package>,
+    is_installed: bool,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -41,8 +42,10 @@ pub enum Message {
     ToggleContextPage(ContextPage),
     UpdateConfig(Config),
     SelectFile,
-    UpdatePackage(Option<Package>),
-    InstallPackage(Package),
+    UpdatePackage(Package),
+    AskPermissions(Package),
+    CheckInstalled(Option<Package>),
+    PackageInstalled(bool),
 }
 
 /// Create a COSMIC application from the app model
@@ -89,6 +92,7 @@ impl Application for AppModel {
                 .unwrap_or_default(),
 
             package: None,
+            is_installed: true,
         };
 
         // Create a startup command that sets the window title.
@@ -130,9 +134,13 @@ impl Application for AppModel {
             widget::button::standard(fl!("select-file")).on_press(Message::SelectFile);
 
         let install_btn: Option<Element<'_, _>> = self.package.clone().map(|package| {
-            widget::button::suggested(fl!("install-file"))
-                .on_press(Message::InstallPackage(package))
-                .into()
+            let mut btn = widget::button::suggested(fl!("install-file"));
+
+            if !self.is_installed {
+                btn = btn.on_press(Message::AskPermissions(package));
+            }
+
+            btn.into()
         });
 
         let header = widget::container(
@@ -258,7 +266,11 @@ impl Application for AppModel {
                                             String::new()
                                         };
 
-                                    Some(Package { path, name })
+                                    Some(Package {
+                                        path,
+                                        name,
+                                        is_installed: false,
+                                    })
                                 }
                                 None => None,
                             };
@@ -269,16 +281,35 @@ impl Application for AppModel {
                 };
 
                 return Command::perform(future, |package| {
-                    cosmic::app::Message::App(Message::UpdatePackage(package))
+                    cosmic::app::Message::App(Message::CheckInstalled(package))
                 });
             }
 
-            Message::UpdatePackage(package) => {
-                self.package = package;
+            Message::CheckInstalled(package) => {
+                if let Some(package) = package {
+                    return command::message(cosmic::app::Message::App(Message::UpdatePackage(
+                        package,
+                    )));
+                }
             }
 
-            Message::InstallPackage(package) => {
-                println!("Installing... {:?}", package);
+            Message::UpdatePackage(package) => {
+                self.is_installed = package.is_installed;
+                self.package = Some(package);
+            }
+
+            Message::AskPermissions(package) => {
+                return Command::perform(grant_permissions(package), |done| {
+                    if let Ok(status) = done {
+                        cosmic::app::Message::App(Message::PackageInstalled(status))
+                    } else {
+                        cosmic::app::Message::None
+                    }
+                });
+            }
+
+            Message::PackageInstalled(status) => {
+                self.is_installed = status;
             }
         }
 
