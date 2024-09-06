@@ -3,6 +3,8 @@ use std::fmt::Display;
 use zbus::Connection;
 use zbus_polkit::policykit1::{self, CheckAuthorizationFlags};
 
+use crate::zbus::{AptDaemonProxy, AptTransactionProxy};
+
 #[derive(Debug, Clone)]
 pub struct Package {
     pub path: String,
@@ -53,31 +55,16 @@ fn zbus_error_from_display<E: Display>(why: E) -> zbus::fdo::Error {
 }
 
 async fn install_file(connection: &Connection, package: Package) -> Result<bool, zbus::fdo::Error> {
-    if let Ok(path) = connection
-        .call_method(
-            Some("org.debian.apt"),
-            "/org/debian/apt",
-            Some("org.debian.apt"),
-            "InstallFile",
-            &(package.path, false),
-        )
-        .await?
-        .body()
-        .deserialize::<&str>()
-    {
-        return match connection
-            .call_method(
-                Some("org.debian.apt"),
-                path,
-                Some("org.debian.apt.transaction"),
-                "Run",
-                &(),
-            )
-            .await
-        {
-            Ok(_) => return Ok(true),
-            Err(_) => Err(zbus_error_from_display("Error running transaction")),
-        };
+    if let Ok(proxy) = AptDaemonProxy::new(connection).await {
+        if let Ok(path) = proxy.install_file(&package.path, false).await {
+            if let Ok(proxy) = AptTransactionProxy::new(connection, path).await {
+                if proxy.run().await.is_ok() {
+                    return Ok(true);
+                } else {
+                    return Err(zbus_error_from_display("Error running transaction"));
+                }
+            }
+        }
     }
 
     Ok(false)
