@@ -10,13 +10,6 @@ pub struct Package {
     pub is_installed: bool,
 }
 
-// impl Package {
-//     pub async fn apt_install(&self) -> Result<String, zbus::fdo::Error> {
-//         let connection = Connection::system().await?;
-//         Err(zbus_error_from_display("Operation not permitted by Polkit"))
-//     }
-// }
-
 pub async fn grant_permissions(package: Package) -> Result<bool, zbus::fdo::Error> {
     let connection = Connection::system().await?;
     let polkit = policykit1::AuthorityProxy::new(&connection).await?;
