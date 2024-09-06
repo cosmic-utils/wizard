@@ -1,5 +1,5 @@
 use anyhow::Context;
-use std::fmt::Display;
+use std::{fmt::Display, io, path::Path};
 use zbus::Connection;
 use zbus_polkit::policykit1::{self, CheckAuthorizationFlags};
 
@@ -10,6 +10,25 @@ pub struct Package {
     pub path: String,
     pub name: String,
     pub is_installed: bool,
+}
+
+impl Package {
+    pub fn new(path: String) -> io::Result<Self> {
+        let name = if let Some(os_filename) = Path::new(&path).file_name() {
+            match os_filename.to_str() {
+                Some(name) => name.to_string(),
+                None => String::new(),
+            }
+        } else {
+            String::new()
+        };
+
+        Ok(Self {
+            path,
+            name,
+            is_installed: false,
+        })
+    }
 }
 
 pub async fn grant_permissions(package: Package) -> Result<bool, zbus::fdo::Error> {

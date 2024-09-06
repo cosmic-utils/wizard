@@ -13,7 +13,6 @@ use cosmic::widget::{self, menu, settings};
 use cosmic::{cosmic_theme, theme, Application, ApplicationExt, Element};
 use futures_util::SinkExt;
 use std::collections::HashMap;
-use std::path::Path;
 
 const REPOSITORY: &str = "https://github.com/cosmic-utils/wizard";
 const APP_ICON: &[u8] = include_bytes!("../res/icons/hicolor/scalable/apps/icon.svg");
@@ -256,21 +255,11 @@ impl Application for AppModel {
                             return match file.uris().first() {
                                 Some(url) => {
                                     let path = url.path().to_string();
-                                    let name =
-                                        if let Some(os_filename) = Path::new(&path).file_name() {
-                                            match os_filename.to_str() {
-                                                Some(name) => name.to_string(),
-                                                None => String::new(),
-                                            }
-                                        } else {
-                                            String::new()
-                                        };
 
-                                    Some(Package {
-                                        path,
-                                        name,
-                                        is_installed: false,
-                                    })
+                                    if let Ok(package) = Package::new(path) {
+                                        return Some(package);
+                                    }
+                                    None
                                 }
                                 None => None,
                             };
