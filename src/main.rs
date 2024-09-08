@@ -4,6 +4,7 @@ mod app;
 mod config;
 mod i18n;
 mod package;
+mod packagekit;
 mod zbus;
 
 fn main() -> cosmic::iced::Result {

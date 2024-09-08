@@ -3,8 +3,9 @@
 use crate::config::Config;
 use crate::fl;
 use crate::package::{grant_permissions, Package};
+use crate::packagekit::{transacation_handle, PackageKit};
 use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
-use cosmic::app::{command, Command, Core};
+use cosmic::app::{Command, Core};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Alignment, Length, Subscription};
@@ -41,9 +42,8 @@ pub enum Message {
     ToggleContextPage(ContextPage),
     UpdateConfig(Config),
     SelectFile,
-    UpdatePackage(Package),
-    AskPermissions(Package),
-    CheckInstalled(Option<Package>),
+    UpdatePackage(String),
+    AskPermissions(Box<Package>),
     PackageInstalled(bool),
 }
 
@@ -91,7 +91,7 @@ impl Application for AppModel {
                 .unwrap_or_default(),
 
             package: None,
-            is_installed: true,
+            is_installed: false,
         };
 
         // Create a startup command that sets the window title.
@@ -136,7 +136,7 @@ impl Application for AppModel {
             let mut btn = widget::button::suggested(fl!("install-file"));
 
             if !self.is_installed {
-                btn = btn.on_press(Message::AskPermissions(package));
+                btn = btn.on_press(Message::AskPermissions(Box::new(package)));
             }
 
             btn.into()
@@ -153,8 +153,21 @@ impl Application for AppModel {
 
         let details: Option<Element<'_, _>> = self.package.clone().map(|package| {
             let column = widget::list_column()
+                .add(settings::item("ID", widget::text(package.id)))
                 .add(settings::item("Name", widget::text(package.name)))
-                .add(settings::item("Path", widget::text(package.path)));
+                .add(settings::item("Version", widget::text(package.version)))
+                .add(settings::item(
+                    "Architecture",
+                    widget::text(package.architecture),
+                ))
+                .add(settings::item("Summary", widget::text(package.summary)))
+                .add(settings::item(
+                    "Description",
+                    widget::text(package.description),
+                ))
+                .add(settings::item("URL", widget::text(package.url)))
+                .add(settings::item("License", widget::text(package.license)))
+                .add(settings::item("Size", widget::text(package.size)));
 
             widget::container(widget::container(column).max_width(800))
                 .align_x(Horizontal::Center)
@@ -254,12 +267,7 @@ impl Application for AppModel {
                         if let Ok(file) = request.response() {
                             return match file.uris().first() {
                                 Some(url) => {
-                                    let path = url.path().to_string();
-
-                                    if let Ok(package) = Package::new(path) {
-                                        return Some(package);
-                                    }
-                                    None
+                                    return Some(url.path().to_string());
                                 }
                                 None => None,
                             };
@@ -269,26 +277,29 @@ impl Application for AppModel {
                     None
                 };
 
-                return Command::perform(future, |package| {
-                    cosmic::app::Message::App(Message::CheckInstalled(package))
+                return Command::perform(future, |path| {
+                    if let Some(path) = path {
+                        return cosmic::app::Message::App(Message::UpdatePackage(path));
+                    }
+                    cosmic::app::Message::None
                 });
             }
 
-            Message::CheckInstalled(package) => {
-                if let Some(package) = package {
-                    return command::message(cosmic::app::Message::App(Message::UpdatePackage(
-                        package,
-                    )));
+            Message::UpdatePackage(path) => {
+                let pk = PackageKit::new();
+                let tx = pk.transaction().unwrap();
+
+                tx.get_details_local(&[&path]).unwrap();
+
+                let (tx_details, _tx_packages) = transacation_handle(tx, |_, _| {}).unwrap();
+
+                for tx_detail in tx_details {
+                    self.package = Some(Package::new(path.clone(), tx_detail));
                 }
             }
 
-            Message::UpdatePackage(package) => {
-                self.is_installed = package.is_installed;
-                self.package = Some(package);
-            }
-
             Message::AskPermissions(package) => {
-                return Command::perform(grant_permissions(package), |done| {
+                return Command::perform(grant_permissions(*package), move |done| {
                     if let Ok(status) = done {
                         cosmic::app::Message::App(Message::PackageInstalled(status))
                     } else {

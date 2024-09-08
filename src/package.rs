@@ -1,33 +1,46 @@
 use anyhow::Context;
-use std::{fmt::Display, io, path::Path};
+use std::fmt::Display;
 use zbus::Connection;
 use zbus_polkit::policykit1::{self, CheckAuthorizationFlags};
 
-use crate::zbus::{AptDaemonProxy, AptTransactionProxy};
+use crate::{
+    packagekit::TransactionDetails,
+    zbus::{AptDaemonProxy, AptTransactionProxy},
+};
 
 #[derive(Debug, Clone)]
 pub struct Package {
     pub path: String,
+    pub id: String,
     pub name: String,
-    pub is_installed: bool,
+    pub version: String,
+    pub architecture: String,
+    pub summary: String,
+    pub description: String,
+    pub url: String,
+    pub license: String,
+    pub size: String,
 }
 
 impl Package {
-    pub fn new(path: String) -> io::Result<Self> {
-        let name = if let Some(os_filename) = Path::new(&path).file_name() {
-            match os_filename.to_str() {
-                Some(name) => name.to_string(),
-                None => String::new(),
-            }
-        } else {
-            String::new()
-        };
+    pub fn new(path: String, tx: TransactionDetails) -> Self {
+        let mut parts = tx.package_id.split(';');
+        let package_name = parts.next().unwrap_or("");
+        let version = parts.next().unwrap_or("");
+        let architecture = parts.next().unwrap_or("");
 
-        Ok(Self {
+        Self {
             path,
-            name,
-            is_installed: false,
-        })
+            id: tx.package_id.clone(),
+            name: package_name.to_string(),
+            version: version.to_string(),
+            architecture: architecture.to_string(),
+            summary: tx.summary,
+            description: tx.description,
+            url: tx.url,
+            license: tx.license,
+            size: tx.size,
+        }
     }
 }
 
