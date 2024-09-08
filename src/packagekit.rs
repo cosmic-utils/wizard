@@ -65,7 +65,7 @@ impl PackageKit {
     }
 }
 
-pub fn transacation_handle(
+pub fn transaction_handle(
     tx: TransactionProxyBlocking,
     mut on_progress: impl FnMut(u32, TransactionProgress),
 ) -> anyhow::Result<(Vec<TransactionDetails>, Vec<TransactionPackage>)> {

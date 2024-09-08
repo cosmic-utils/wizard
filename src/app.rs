@@ -3,7 +3,7 @@
 use crate::config::Config;
 use crate::fl;
 use crate::package::{grant_permissions, Package};
-use crate::packagekit::{transacation_handle, PackageKit};
+use crate::packagekit::{transaction_handle, PackageKit};
 use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
 use cosmic::app::{Command, Core};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
@@ -291,7 +291,7 @@ impl Application for AppModel {
 
                 tx.get_details_local(&[&path]).unwrap();
 
-                let (tx_details, _tx_packages) = transacation_handle(tx, |_, _| {}).unwrap();
+                let (tx_details, _tx_packages) = transaction_handle(tx, |_, _| {}).unwrap();
 
                 for tx_detail in tx_details {
                     self.package = Some(Package::new(path.clone(), tx_detail));
