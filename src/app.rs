@@ -297,7 +297,7 @@ impl Application for AppModel {
 
                 tx.get_details_local(&[&path]).unwrap();
 
-                let (tx_details, _tx_packages) = transaction_handle(tx, |_, _| {}).unwrap();
+                let tx_details = transaction_handle(tx).unwrap();
 
                 for tx_detail in tx_details {
                     self.packages.push(Package::new(path.clone(), tx_detail));

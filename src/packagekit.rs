@@ -5,7 +5,7 @@ use packagekit_zbus::{
     PackageKit::PackageKitProxyBlocking,
     Transaction::TransactionProxyBlocking,
 };
-use zbus::{interface, proxy};
+use zbus::proxy;
 
 #[derive(Debug)]
 pub struct TransactionDetails {
@@ -16,28 +16,6 @@ pub struct TransactionDetails {
     pub license: String,
     pub size: String,
 }
-
-#[derive(Debug)]
-pub struct TransactionPackage {
-    info: u32,
-    package_id: String,
-    summary: String,
-}
-
-#[derive(Debug)]
-pub struct TransactionProgress {
-    package_id: String,
-    status: u32,
-    percentage: u32,
-}
-
-// #[repr(u64)]
-// pub enum TransactionFlag {
-//     None = 1 << 0,
-//     OnlyTrusted = 1 << 1,
-//     AllowReinstall = 1 << 4,
-//     AllowDowngrade = 1 << 6,
-// }
 
 pub struct PackageKit {
     connection: Connection,
@@ -66,12 +44,8 @@ impl PackageKit {
     }
 }
 
-pub fn transaction_handle(
-    tx: TransactionProxyBlocking,
-    mut on_progress: impl FnMut(u32, TransactionProgress),
-) -> anyhow::Result<(Vec<TransactionDetails>, Vec<TransactionPackage>)> {
+pub fn transaction_handle(tx: TransactionProxyBlocking) -> anyhow::Result<Vec<TransactionDetails>> {
     let mut details = Vec::new();
-    let mut packages = Vec::new();
 
     for signal in tx.receive_all_signals()? {
         if let Some(member) = signal.member() {
@@ -122,28 +96,6 @@ pub fn transaction_handle(
                     println!("{details} (code {code})");
                     break;
                 }
-                "ItemProgress" => {
-                    // https://www.freedesktop.org/software/PackageKit/gtk-doc/Transaction.html#Transaction::ItemProgress
-                    let (package_id, status, percentage) = signal.body::<(String, u32, u32)>()?;
-                    let total_percentage = tx.percentage().unwrap_or(percentage);
-                    on_progress(
-                        total_percentage,
-                        TransactionProgress {
-                            package_id,
-                            status,
-                            percentage,
-                        },
-                    )
-                }
-                "Package" => {
-                    // https://www.freedesktop.org/software/PackageKit/gtk-doc/Transaction.html#Transaction::Package
-                    let (info, package_id, summary) = signal.body::<(u32, String, String)>()?;
-                    packages.push(TransactionPackage {
-                        info,
-                        package_id,
-                        summary,
-                    });
-                }
                 "Finished" => {
                     break;
                 }
@@ -153,7 +105,7 @@ pub fn transaction_handle(
             }
         }
     }
-    Ok((details, packages))
+    Ok(details)
 }
 
 #[proxy(
