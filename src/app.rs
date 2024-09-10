@@ -132,24 +132,36 @@ impl Application for AppModel {
     /// Application events will be processed through the view. Any messages emitted by
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<Self::Message> {
-        let filechooser_btn =
-            widget::button::standard(fl!("select-file")).on_press(Message::SelectFile);
+        let filechooser_btn = widget::button::button(
+            widget::text(fl!("select-file")).horizontal_alignment(Horizontal::Center),
+        )
+        .padding(10)
+        .width(Length::FillPortion(1))
+        .on_press(Message::SelectFile);
 
         let install_btn: Option<Element<'_, _>> = if !self.packages.is_empty() {
             Some(
-                widget::button::suggested(fl!("install-file"))
-                    .on_press(Message::AskInstallation(self.packages.clone()))
-                    .into(),
+                widget::button(
+                    widget::text(fl!("install-file")).horizontal_alignment(Horizontal::Center),
+                )
+                .padding(10)
+                .width(Length::FillPortion(1))
+                .on_press(Message::AskInstallation(self.packages.clone()))
+                .style(theme::Button::Suggested)
+                .into(),
             )
         } else {
             None
         };
 
         let header = widget::container(
-            widget::row()
-                .spacing(60)
-                .push(filechooser_btn)
-                .push_maybe(install_btn),
+            widget::container(
+                widget::row()
+                    .spacing(30)
+                    .push(filechooser_btn)
+                    .push_maybe(install_btn),
+            )
+            .max_width(800),
         )
         .width(Length::Fill)
         .align_x(Horizontal::Center);
