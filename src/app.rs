@@ -284,8 +284,9 @@ impl Application for AppModel {
             Message::SelectFile => {
                 let future = async {
                     if let Ok(request) = SelectedFiles::open_file()
-                        .title("Select Package to install")
-                        .accept_label("Read")
+                        .title("Select Packages to install")
+                        .accept_label("Add")
+                        .multiple(true)
                         .modal(true)
                         .filter(
                             FileFilter::new("*.deb")
