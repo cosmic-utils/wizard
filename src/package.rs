@@ -38,12 +38,20 @@ impl Package {
     }
 }
 
-pub fn install_packages_local(package: Package) -> anyhow::Result<()> {
+pub fn install_packages_local(packages: Vec<Package>) -> anyhow::Result<bool> {
     let conn = Connection::session()?;
 
-    if let Ok(proxy) = PackageKitModifyProxyBlocking::new(&conn) {
-        proxy.install_package_files(0, &[&package.path], "show-confirm-search,hide-finished")?;
+    let mut paths = Vec::with_capacity(packages.len());
+
+    packages
+        .iter()
+        .for_each(|package| paths.push(package.path.as_str()));
+
+    for path in paths {
+        if let Ok(proxy) = PackageKitModifyProxyBlocking::new(&conn) {
+            proxy.install_package_files(0, &[path], "show-confirm-search,hide-finished")?;
+        }
     }
 
-    Ok(())
+    Ok(true)
 }

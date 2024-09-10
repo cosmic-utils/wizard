@@ -10,7 +10,7 @@ use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Alignment, Length, Subscription};
 use cosmic::prelude::CollectionWidget;
-use cosmic::widget::{self, menu, settings};
+use cosmic::widget::{self, menu, row, settings};
 use cosmic::{command, cosmic_theme, theme, Application, ApplicationExt, Element};
 use futures_util::SinkExt;
 use std::collections::HashMap;
@@ -30,6 +30,7 @@ pub struct AppModel {
     // Configuration data that persists between application runs.
     config: Config,
 
+    packages: Vec<Package>,
     package: Option<Package>,
     is_installed: bool,
 }
@@ -42,9 +43,10 @@ pub enum Message {
     ToggleContextPage(ContextPage),
     UpdateConfig(Config),
     SelectFile,
-    UpdatePackage(String),
-    AskInstallation(Box<Package>),
-    PackageInstalled(bool),
+    UpdatePackages(String),
+    AskInstallation(Vec<Package>),
+    PackagesInstalled(bool),
+    ShowDetails(Box<Package>),
 }
 
 /// Create a COSMIC application from the app model
@@ -90,6 +92,7 @@ impl Application for AppModel {
                 })
                 .unwrap_or_default(),
 
+            packages: Vec::new(),
             package: None,
             is_installed: false,
         };
@@ -132,15 +135,15 @@ impl Application for AppModel {
         let filechooser_btn =
             widget::button::standard(fl!("select-file")).on_press(Message::SelectFile);
 
-        let install_btn: Option<Element<'_, _>> = self.package.clone().map(|package| {
-            let mut btn = widget::button::suggested(fl!("install-file"));
-
-            if !self.is_installed {
-                btn = btn.on_press(Message::AskInstallation(Box::new(package)));
-            }
-
-            btn.into()
-        });
+        let install_btn: Option<Element<'_, _>> = if !self.packages.is_empty() {
+            Some(
+                widget::button::suggested(fl!("install-file"))
+                    .on_press(Message::AskInstallation(self.packages.clone()))
+                    .into(),
+            )
+        } else {
+            None
+        };
 
         let header = widget::container(
             widget::row()
@@ -151,33 +154,36 @@ impl Application for AppModel {
         .width(Length::Fill)
         .align_x(Horizontal::Center);
 
-        let details: Option<Element<'_, _>> = self.package.clone().map(|package| {
-            let column = widget::list_column()
-                .add(settings::item("ID", widget::text(package.id)))
-                .add(settings::item("Name", widget::text(package.name)))
-                .add(settings::item("Version", widget::text(package.version)))
-                .add(settings::item(
-                    "Architecture",
-                    widget::text(package.architecture),
-                ))
-                .add(settings::item("Summary", widget::text(package.summary)))
-                .add(settings::item(
-                    "Description",
-                    widget::text(package.description),
-                ))
-                .add(settings::item("URL", widget::text(package.url)))
-                .add(settings::item("License", widget::text(package.license)))
-                .add(settings::item("Size", widget::text(package.size)));
+        let mut files_column = widget::list_column();
 
-            widget::container(widget::container(column).max_width(800))
-                .align_x(Horizontal::Center)
-                .into()
-        });
+        for package in self.packages.clone() {
+            files_column = files_column.add(settings::item(
+                "Package file",
+                row()
+                    .push(widget::text(package.path.clone()))
+                    .spacing(28)
+                    .push(
+                        widget::button::standard(fl!("show-details"))
+                            .on_press(Message::ShowDetails(Box::new(package))),
+                    ),
+            ));
+        }
+
+        let files: Option<Element<'_, _>> = if !self.packages.is_empty() {
+            Some(
+                widget::container(widget::container(files_column).max_width(800))
+                    .align_x(Horizontal::Center)
+                    .into(),
+            )
+        } else {
+            None
+        };
 
         let content = widget::column()
             .spacing(16)
             .push(header)
-            .push_maybe(details);
+            .push_maybe(files)
+            .push_maybe(self.details());
 
         widget::container(content)
             .width(Length::Fill)
@@ -279,13 +285,13 @@ impl Application for AppModel {
 
                 return Command::perform(future, |path| {
                     if let Some(path) = path {
-                        return cosmic::app::Message::App(Message::UpdatePackage(path));
+                        return cosmic::app::Message::App(Message::UpdatePackages(path));
                     }
                     cosmic::app::Message::None
                 });
             }
 
-            Message::UpdatePackage(path) => {
+            Message::UpdatePackages(path) => {
                 let pk = PackageKit::new();
                 let tx = pk.transaction().unwrap();
 
@@ -294,18 +300,26 @@ impl Application for AppModel {
                 let (tx_details, _tx_packages) = transaction_handle(tx, |_, _| {}).unwrap();
 
                 for tx_detail in tx_details {
-                    self.package = Some(Package::new(path.clone(), tx_detail));
+                    self.packages.push(Package::new(path.clone(), tx_detail));
                 }
             }
 
-            Message::AskInstallation(package) => {
-                if install_packages_local(*package).is_ok() {
-                    return command::future(async move { Message::PackageInstalled(true) });
+            Message::AskInstallation(packages) => {
+                if let Ok(status) = install_packages_local(packages) {
+                    return command::future(async move { Message::PackagesInstalled(status) });
                 }
             }
 
-            Message::PackageInstalled(status) => {
+            Message::PackagesInstalled(status) => {
                 self.is_installed = status;
+            }
+
+            Message::ShowDetails(package) => {
+                if self.package.is_some() {
+                    self.package = None
+                } else {
+                    self.package = Some(*package);
+                }
             }
         }
 
@@ -339,6 +353,31 @@ impl AppModel {
     pub fn update_title(&mut self) -> Command<Message> {
         let window_title = fl!("app-title");
         self.set_window_title(window_title)
+    }
+
+    pub fn details(&self) -> Option<Element<Message>> {
+        self.package.clone().map(|package| {
+            let column = widget::list_column()
+                .add(settings::item("ID", widget::text(package.id)))
+                .add(settings::item("Name", widget::text(package.name)))
+                .add(settings::item("Version", widget::text(package.version)))
+                .add(settings::item(
+                    "Architecture",
+                    widget::text(package.architecture),
+                ))
+                .add(settings::item("Summary", widget::text(package.summary)))
+                .add(settings::item(
+                    "Description",
+                    widget::text(package.description),
+                ))
+                .add(settings::item("URL", widget::text(package.url)))
+                .add(settings::item("License", widget::text(package.license)))
+                .add(settings::item("Size", widget::text(package.size)));
+
+            widget::container(widget::container(column).max_width(800))
+                .align_x(Horizontal::Center)
+                .into()
+        })
     }
 }
 
