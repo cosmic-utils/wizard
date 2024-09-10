@@ -5,6 +5,7 @@ use packagekit_zbus::{
     PackageKit::PackageKitProxyBlocking,
     Transaction::TransactionProxyBlocking,
 };
+use zbus::{interface, proxy};
 
 #[derive(Debug)]
 pub struct TransactionDetails {
@@ -153,4 +154,18 @@ pub fn transaction_handle(
         }
     }
     Ok((details, packages))
+}
+
+#[proxy(
+    interface = "org.freedesktop.PackageKit.Modify",
+    default_service = "org.freedesktop.PackageKit",
+    default_path = "/org/freedesktop/PackageKit"
+)]
+trait PackageKitModify {
+    fn install_package_files(
+        &self,
+        xid: u32,
+        files: &[&str],
+        interaction: &str,
+    ) -> zbus::Result<()>;
 }

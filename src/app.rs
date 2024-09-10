@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use crate::fl;
-use crate::package::{grant_permissions, Package};
+use crate::package::{install_packages_local, Package};
 use crate::packagekit::{transaction_handle, PackageKit};
 use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
 use cosmic::app::{Command, Core};
@@ -11,7 +11,7 @@ use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Alignment, Length, Subscription};
 use cosmic::prelude::CollectionWidget;
 use cosmic::widget::{self, menu, settings};
-use cosmic::{cosmic_theme, theme, Application, ApplicationExt, Element};
+use cosmic::{command, cosmic_theme, theme, Application, ApplicationExt, Element};
 use futures_util::SinkExt;
 use std::collections::HashMap;
 
@@ -43,7 +43,7 @@ pub enum Message {
     UpdateConfig(Config),
     SelectFile,
     UpdatePackage(String),
-    AskPermissions(Box<Package>),
+    AskInstallation(Box<Package>),
     PackageInstalled(bool),
 }
 
@@ -136,7 +136,7 @@ impl Application for AppModel {
             let mut btn = widget::button::suggested(fl!("install-file"));
 
             if !self.is_installed {
-                btn = btn.on_press(Message::AskPermissions(Box::new(package)));
+                btn = btn.on_press(Message::AskInstallation(Box::new(package)));
             }
 
             btn.into()
@@ -298,14 +298,10 @@ impl Application for AppModel {
                 }
             }
 
-            Message::AskPermissions(package) => {
-                return Command::perform(grant_permissions(*package), move |done| {
-                    if let Ok(status) = done {
-                        cosmic::app::Message::App(Message::PackageInstalled(status))
-                    } else {
-                        cosmic::app::Message::None
-                    }
-                });
+            Message::AskInstallation(package) => {
+                if install_packages_local(*package).is_ok() {
+                    return command::future(async move { Message::PackageInstalled(true) });
+                }
             }
 
             Message::PackageInstalled(status) => {
