@@ -170,7 +170,7 @@ impl Application for AppModel {
 
         for package in self.packages.clone() {
             files_column = files_column.add(settings::item(
-                "Package file",
+                fl!("package-file"),
                 row()
                     .push(widget::text(package.path.clone()))
                     .spacing(28)
@@ -370,21 +370,30 @@ impl AppModel {
     pub fn details(&self) -> Option<Element<Message>> {
         self.package.clone().map(|package| {
             let column = widget::list_column()
-                .add(settings::item("ID", widget::text(package.id)))
-                .add(settings::item("Name", widget::text(package.name)))
-                .add(settings::item("Version", widget::text(package.version)))
+                .add(settings::item(fl!("id"), widget::text(package.id)))
+                .add(settings::item(fl!("name"), widget::text(package.name)))
                 .add(settings::item(
-                    "Architecture",
+                    fl!("version"),
+                    widget::text(package.version),
+                ))
+                .add(settings::item(
+                    fl!("architecture"),
                     widget::text(package.architecture),
                 ))
-                .add(settings::item("Summary", widget::text(package.summary)))
                 .add(settings::item(
-                    "Description",
+                    fl!("summary"),
+                    widget::text(package.summary),
+                ))
+                .add(settings::item(
+                    fl!("description"),
                     widget::text(package.description),
                 ))
-                .add(settings::item("URL", widget::text(package.url)))
-                .add(settings::item("License", widget::text(package.license)))
-                .add(settings::item("Size", widget::text(package.size)));
+                .add(settings::item(fl!("url"), widget::text(package.url)))
+                .add(settings::item(
+                    fl!("license"),
+                    widget::text(package.license),
+                ))
+                .add(settings::item(fl!("size"), widget::text(package.size)));
 
             widget::container(widget::container(column).max_width(800))
                 .align_x(Horizontal::Center)
