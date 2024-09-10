@@ -5,7 +5,6 @@ mod config;
 mod i18n;
 mod package;
 mod packagekit;
-mod zbus;
 
 fn main() -> cosmic::iced::Result {
     // Get the system's preferred languages.
