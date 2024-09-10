@@ -14,6 +14,8 @@ use cosmic::widget::{self, menu, row, settings};
 use cosmic::{command, cosmic_theme, theme, Application, ApplicationExt, Element};
 use futures_util::SinkExt;
 use std::collections::HashMap;
+use std::env;
+use std::path::PathBuf;
 
 const REPOSITORY: &str = "https://github.com/cosmic-utils/wizard";
 const APP_ICON: &[u8] = include_bytes!("../res/icons/hicolor/scalable/apps/icon.svg");
@@ -73,6 +75,16 @@ impl Application for AppModel {
 
     /// Initializes the application with any given flags and startup commands.
     fn init(core: Core, _flags: Self::Flags) -> (Self, Command<Self::Message>) {
+        let mut commands = Vec::new();
+
+        for arg in env::args().skip(1) {
+            let path = PathBuf::from(&arg);
+
+            if path.is_file() {
+                commands.push(command::future(async move { Message::UpdatePackages(arg) }))
+            }
+        }
+
         // Construct the app model with the runtime's core.
         let mut app = AppModel {
             core,
@@ -98,9 +110,9 @@ impl Application for AppModel {
         };
 
         // Create a startup command that sets the window title.
-        let command = app.update_title();
+        commands.push(app.update_title());
 
-        (app, command)
+        (app, Command::batch(commands))
     }
 
     /// Elements to pack at the start of the header bar.

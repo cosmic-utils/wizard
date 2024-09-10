@@ -57,7 +57,7 @@ run *args:
 # Installs files
 install:
     install -Dm0755 {{bin-src}} {{bin-dst}}
-    install -Dm0644 res/app.desktop {{desktop-dst}}
+    install -Dm0644 res/io.github.cosmicUtils.Wizard.desktop {{desktop-dst}}
     install -Dm0644 {{icon-svg-src}} {{icon-svg-dst}}
 
 # Uninstalls installed files
