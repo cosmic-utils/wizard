@@ -49,7 +49,7 @@ pub fn install_packages_local(packages: Vec<Package>) -> anyhow::Result<bool> {
 
     for path in paths {
         if let Ok(proxy) = PackageKitModifyProxyBlocking::new(&conn) {
-            proxy.install_package_files(0, &[path], "show-confirm-search,hide-finished")?;
+            proxy.install_package_files(0, &[path], "hide-confirm-search,hide-confirm-deps,hide-confirm-install,hide-progress,hide-finished,hide-warning")?;
         }
     }
 
