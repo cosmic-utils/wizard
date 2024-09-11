@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Wizard
-Exec=wizard %F
+Exec=wizard %U
 Terminal=false
 Type=Application
 StartupNotify=true
