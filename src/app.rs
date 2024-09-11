@@ -45,6 +45,7 @@ pub enum Message {
     ToggleContextPage(ContextPage),
     UpdateConfig(Config),
     SelectFile,
+    ProcessSelectedFiles(Vec<String>),
     UpdatePackages(String),
     AskInstallation(Vec<Package>),
     PackagesInstalled(bool),
@@ -296,24 +297,35 @@ impl Application for AppModel {
                         .await
                     {
                         if let Ok(file) = request.response() {
-                            return match file.uris().first() {
-                                Some(url) => {
-                                    return Some(url.path().to_string());
-                                }
-                                None => None,
-                            };
+                            let mut paths = Vec::new();
+
+                            for uri in file.uris() {
+                                paths.push(uri.path().to_string())
+                            }
+
+                            return Some(paths);
                         }
                     }
 
                     None
                 };
 
-                return Command::perform(future, |path| {
-                    if let Some(path) = path {
-                        return cosmic::app::Message::App(Message::UpdatePackages(path));
+                return Command::perform(future, |paths| {
+                    if let Some(paths) = paths {
+                        return cosmic::app::Message::App(Message::ProcessSelectedFiles(paths));
                     }
                     cosmic::app::Message::None
                 });
+            }
+
+            Message::ProcessSelectedFiles(paths) => {
+                let mut commands = Vec::new();
+
+                for path in paths {
+                    commands.push(command::future(async { Message::UpdatePackages(path) }))
+                }
+
+                return Command::batch(commands);
             }
 
             Message::UpdatePackages(path) => {
