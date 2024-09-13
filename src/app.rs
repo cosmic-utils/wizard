@@ -349,6 +349,9 @@ impl Application for AppModel {
 
             Message::PackagesInstalled(status) => {
                 self.is_installed = status;
+                if self.is_installed {
+                    self.packages = Vec::new();
+                }
             }
 
             Message::ShowDetails(package) => {
