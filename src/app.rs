@@ -8,14 +8,17 @@ use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
 use cosmic::app::{Command, Core};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::{Alignment, Length, Subscription};
+use cosmic::iced::{futures, subscription, Alignment, Length, Subscription};
 use cosmic::prelude::CollectionWidget;
-use cosmic::widget::{self, menu, row, settings};
+use cosmic::widget::{self, menu, row, settings, ProgressBar};
 use cosmic::{command, cosmic_theme, theme, Application, ApplicationExt, Element};
 use futures_util::SinkExt;
+use std::any::TypeId;
 use std::collections::HashMap;
 use std::env;
+use std::future::pending;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 const REPOSITORY: &str = "https://github.com/cosmic-utils/wizard";
 const APP_ICON: &[u8] = include_bytes!("../res/icons/hicolor/scalable/apps/icon.svg");
@@ -35,19 +38,21 @@ pub struct AppModel {
     packages: Vec<Package>,
     package: Option<Package>,
     is_installed: bool,
+    ask_install: bool,
+    progress: Option<f32>,
 }
 
 /// Messages emitted by the application and its widgets.
 #[derive(Debug, Clone)]
 pub enum Message {
     OpenRepositoryUrl,
-    SubscriptionChannel,
     ToggleContextPage(ContextPage),
     UpdateConfig(Config),
     SelectFile,
     ProcessSelectedFiles(Vec<String>),
     UpdatePackages(String),
-    AskInstallation(Vec<Package>),
+    AskInstallation,
+    Progress(u32),
     PackagesInstalled(bool),
     ShowDetails(Box<Package>),
 }
@@ -108,6 +113,8 @@ impl Application for AppModel {
             packages: Vec::new(),
             package: None,
             is_installed: false,
+            ask_install: false,
+            progress: None,
         };
 
         // Create a startup command that sets the window title.
@@ -159,14 +166,14 @@ impl Application for AppModel {
                 )
                 .padding(10)
                 .width(Length::FillPortion(1))
-                .on_press(Message::AskInstallation(self.packages.clone()))
+                .on_press(Message::AskInstallation)
                 .style(theme::Button::Suggested)
                 .into(),
             )
         } else {
             None
         };
-
+        let max_width = if install_btn.is_some() {800} else {400};
         let header = widget::container(
             widget::container(
                 widget::row()
@@ -174,7 +181,7 @@ impl Application for AppModel {
                     .push(filechooser_btn)
                     .push_maybe(install_btn),
             )
-            .max_width(800),
+            .max_width(max_width),
         )
         .width(Length::Fill)
         .align_x(Horizontal::Center);
@@ -183,7 +190,7 @@ impl Application for AppModel {
 
         for package in self.packages.clone() {
             files_column = files_column.add(settings::item(
-                fl!("package-file"),
+                package.name.clone(),
                 row()
                     .push(widget::text(package.path.clone()))
                     .spacing(28)
@@ -206,7 +213,8 @@ impl Application for AppModel {
 
         let content = widget::column()
             .spacing(16)
-            .push(header)
+            // .push(header)
+            .push_maybe(self.progress().or(Some(header.into())))
             .push_maybe(files)
             .push_maybe(self.details());
 
@@ -224,21 +232,11 @@ impl Application for AppModel {
     /// emit messages to the application through a channel. They are started at the
     /// beginning of the application, and persist through its lifetime.
     fn subscription(&self) -> Subscription<Self::Message> {
-        struct MySubscription;
+        struct ProgressSubscription;
 
-        Subscription::batch(vec![
-            // Create a subscription which emits updates through a channel.
-            cosmic::iced::subscription::channel(
-                std::any::TypeId::of::<MySubscription>(),
-                4,
-                move |mut channel| async move {
-                    _ = channel.send(Message::SubscriptionChannel).await;
-
-                    futures_util::future::pending().await
-                },
-            ),
-            // Watch for application configuration changes.
-            self.core()
+        let mut subscriptions =
+            vec![self
+                .core()
                 .watch_config::<Config>(Self::APP_ID)
                 .map(|update| {
                     // for why in update.errors {
@@ -246,8 +244,45 @@ impl Application for AppModel {
                     // }
 
                     Message::UpdateConfig(update.config)
-                }),
-        ])
+                })];
+
+        if self.ask_install {
+            let packages = self.packages.clone();
+            subscriptions.push(subscription::channel(
+                TypeId::of::<ProgressSubscription>(),
+                16,
+                move |msg_tx| async move {
+                    let msg_tx = Arc::new(tokio::sync::Mutex::new(msg_tx));
+
+                    let msg_tx1 = msg_tx.clone();
+                    tokio::task::spawn_blocking(move || {
+                        if let Ok(status) = install_packages_local(
+                            packages,
+                            Box::new(move |progress| -> () {
+                                let _ = futures::executor::block_on(async {
+                                    msg_tx1.lock().await.send(Message::Progress(progress)).await
+                                });
+                            }),
+                        ) {
+                            let msg_tx2 = msg_tx.clone();
+                            let _ = futures::executor::block_on(async {
+                                msg_tx2
+                                    .lock()
+                                    .await
+                                    .send(Message::PackagesInstalled(status))
+                                    .await
+                            });
+                        }
+                    })
+                    .await
+                    .unwrap();
+
+                    pending().await
+                },
+            ));
+        }
+
+        Subscription::batch(subscriptions)
     }
 
     /// Handles messages emitted by the application and its widgets.
@@ -258,10 +293,6 @@ impl Application for AppModel {
         match message {
             Message::OpenRepositoryUrl => {
                 _ = open::that_detached(REPOSITORY);
-            }
-
-            Message::SubscriptionChannel => {
-                // For example purposes only.
             }
 
             Message::ToggleContextPage(context_page) => {
@@ -329,26 +360,33 @@ impl Application for AppModel {
             }
 
             Message::UpdatePackages(path) => {
-                let pk = PackageKit::new();
+                let pk = PackageKit::new().unwrap();
                 let tx = pk.transaction().unwrap();
 
                 tx.get_details_local(&[&path]).unwrap();
 
-                let tx_details = transaction_handle(tx).unwrap();
+                let tx_details = transaction_handle(tx, |_| {}).unwrap();
 
                 for tx_detail in tx_details {
                     self.packages.push(Package::new(path.clone(), tx_detail));
                 }
             }
-
-            Message::AskInstallation(packages) => {
-                if let Ok(status) = install_packages_local(packages) {
-                    return command::future(async move { Message::PackagesInstalled(status) });
+            Message::Progress(progress) => {
+                // Sometimes it returns 101 at the start
+                if progress > 100 {
+                    self.progress = Some(0.0);
+                } else {
+                    self.progress = Some(progress as f32);
                 }
+            }
+            Message::AskInstallation => {
+                self.ask_install = true;
             }
 
             Message::PackagesInstalled(status) => {
                 self.is_installed = status;
+                self.ask_install = false;
+                self.progress = None;
                 if self.is_installed {
                     self.packages = Vec::new();
                     self.package = None;
@@ -426,6 +464,13 @@ impl AppModel {
 
             widget::container(widget::container(column).max_width(800))
                 .align_x(Horizontal::Center)
+                .into()
+        })
+    }
+    pub fn progress(&self) -> Option<Element<Message>> {
+        self.progress.map(|progress| {
+            widget::container(widget::container(ProgressBar::new(0.0..=100.0, progress))
+                .max_width(800)).align_x(Horizontal::Center)
                 .into()
         })
     }
