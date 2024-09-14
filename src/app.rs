@@ -351,6 +351,7 @@ impl Application for AppModel {
                 self.is_installed = status;
                 if self.is_installed {
                     self.packages = Vec::new();
+                    self.package = None;
                 }
             }
 
