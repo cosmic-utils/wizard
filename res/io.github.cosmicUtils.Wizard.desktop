@@ -7,4 +7,4 @@ StartupNotify=true
 Icon=package-x-generic
 Categories=COSMIC;
 MimeType=application/x-deb;application/vnd.debian.binary-package;
-Keywords=
+Keywords=package;apt;dpkg;install

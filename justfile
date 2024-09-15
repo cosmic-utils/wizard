@@ -43,6 +43,11 @@ build-release *args: (build-debug '--release' args)
 # Compiles release profile with vendored dependencies
 build-vendored *args: vendor-extract (build-release '--frozen --offline' args)
 
+# Compiles and packages with release profile 
+build-deb:
+    command -v cargo-deb || cargo install cargo-deb
+    cargo deb
+
 # Runs a clippy check
 check *args:
     cargo clippy --all-features {{args}} -- -W clippy::pedantic
