@@ -2,6 +2,9 @@
 name = "wizard"
 version = "0.1.0"
 edition = "2021"
+description = "A Debian package installer for the COSMIC desktop"
+license = "GPL-3.0-only"
+authors = ["cosmic-utils"]
 
 [dependencies]
 futures-util = "0.3.30"
@@ -25,6 +28,14 @@ features = ["fluent-system", "desktop-requester"]
 git = "https://github.com/pop-os/libcosmic.git"
 default-features = false
 features = ["dbus-config", "tokio", "winit", "wgpu"]
+
+[package.metadata.deb]
+license-file = "LICENSE"
+assets = [
+    ["target/release/wizard", "usr/bin/", "755"],
+    ["res/*.desktop", "usr/share/applications/", "644"],
+    ["res/icons/hicolor/scalable/apps/icon.svg", "usr/share/icons/hicolor/scalable/apps/io.github.cosmicUtils.Wizard.svg", "644"],
+]
 
 # Uncomment to test a locally-cloned libcosmic
 # [patch.'https://github.com/pop-os/libcosmic']
