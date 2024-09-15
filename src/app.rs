@@ -91,22 +91,21 @@ impl Application for AppModel {
             }
         }
 
-        // Construct the app model with the runtime's core.
+        // Construct the app model with the runtime core.
         let mut app = AppModel {
             core,
             context_page: ContextPage::default(),
             key_binds: HashMap::new(),
             // Optional configuration file for an application.
             config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
-                .map(|context| match Config::get_entry(&context) {
-                    Ok(config) => config,
-                    Err((_errors, config)) => {
+                .map(|context| {
+                    Config::get_entry(&context).unwrap_or_else(|(_errors, config)| {
                         // for why in errors {
                         //     tracing::error!(%why, "error loading app config");
                         // }
 
                         config
-                    }
+                    })
                 })
                 .unwrap_or_default(),
 
@@ -123,19 +122,6 @@ impl Application for AppModel {
         (app, Command::batch(commands))
     }
 
-    /// Elements to pack at the start of the header bar.
-    fn header_start(&self) -> Vec<Element<Self::Message>> {
-        let menu_bar = menu::bar(vec![menu::Tree::with_children(
-            menu::root(fl!("view")),
-            menu::items(
-                &self.key_binds,
-                vec![menu::Item::Button(fl!("about"), MenuAction::About)],
-            ),
-        )]);
-
-        vec![menu_bar.into()]
-    }
-
     /// Display a context drawer if the context page is requested.
     fn context_drawer(&self) -> Option<Element<Self::Message>> {
         if !self.core.window.show_context {
@@ -147,83 +133,17 @@ impl Application for AppModel {
         })
     }
 
-    /// Describes the interface based on the current state of the application model.
-    ///
-    /// Application events will be processed through the view. Any messages emitted by
-    /// events received by widgets will be passed to the update method.
-    fn view(&self) -> Element<Self::Message> {
-        let filechooser_btn = widget::button::button(
-            widget::text(fl!("select-file")).horizontal_alignment(Horizontal::Center),
-        )
-        .padding(10)
-        .width(Length::FillPortion(1))
-        .on_press(Message::SelectFile);
+    /// Elements to pack at the start of the header bar.
+    fn header_start(&self) -> Vec<Element<Self::Message>> {
+        let menu_bar = menu::bar(vec![menu::Tree::with_children(
+            menu::root(fl!("view")),
+            menu::items(
+                &self.key_binds,
+                vec![menu::Item::Button(fl!("about"), MenuAction::About)],
+            ),
+        )]);
 
-        let install_btn: Option<Element<'_, _>> = if !self.packages.is_empty() {
-            Some(
-                widget::button(
-                    widget::text(fl!("install-file")).horizontal_alignment(Horizontal::Center),
-                )
-                .padding(10)
-                .width(Length::FillPortion(1))
-                .on_press(Message::AskInstallation)
-                .style(theme::Button::Suggested)
-                .into(),
-            )
-        } else {
-            None
-        };
-        let max_width = if install_btn.is_some() {800} else {400};
-        let header = widget::container(
-            widget::container(
-                widget::row()
-                    .spacing(30)
-                    .push(filechooser_btn)
-                    .push_maybe(install_btn),
-            )
-            .max_width(max_width),
-        )
-        .width(Length::Fill)
-        .align_x(Horizontal::Center);
-
-        let mut files_column = widget::list_column();
-
-        for package in self.packages.clone() {
-            files_column = files_column.add(settings::item(
-                package.name.clone(),
-                row()
-                    .push(widget::text(package.path.clone()))
-                    .spacing(28)
-                    .push(
-                        widget::button::standard(fl!("show-details"))
-                            .on_press(Message::ShowDetails(Box::new(package))),
-                    ),
-            ));
-        }
-
-        let files: Option<Element<'_, _>> = if !self.packages.is_empty() {
-            Some(
-                widget::container(widget::container(files_column).max_width(800))
-                    .align_x(Horizontal::Center)
-                    .into(),
-            )
-        } else {
-            None
-        };
-
-        let content = widget::column()
-            .spacing(16)
-            // .push(header)
-            .push_maybe(self.progress().or(Some(header.into())))
-            .push_maybe(files)
-            .push_maybe(self.details());
-
-        widget::container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Horizontal::Center)
-            .align_y(Vertical::Center)
-            .into()
+        vec![menu_bar.into()]
     }
 
     /// Register subscriptions for this application.
@@ -258,7 +178,7 @@ impl Application for AppModel {
                     tokio::task::spawn_blocking(move || {
                         if let Ok(status) = install_packages_local(
                             packages,
-                            Box::new(move |progress| -> () {
+                            Box::new(move |progress| {
                                 let _ = futures::executor::block_on(async {
                                     msg_tx1.lock().await.send(Message::Progress(progress)).await
                                 });
@@ -404,6 +324,85 @@ impl Application for AppModel {
 
         Command::none()
     }
+
+    /// Describes the interface based on the current state of the application model.
+    ///
+    /// Application events will be processed through the view. Any messages emitted by
+    /// events received by widgets will be passed to the update method.
+    fn view(&self) -> Element<Self::Message> {
+        let filechooser_btn = widget::button::button(
+            widget::text(fl!("select-file")).horizontal_alignment(Horizontal::Center),
+        )
+        .padding(10)
+        .width(Length::FillPortion(1))
+        .on_press(Message::SelectFile);
+
+        let install_btn: Option<Element<'_, _>> = if !self.packages.is_empty() {
+            Some(
+                widget::button(
+                    widget::text(fl!("install-file")).horizontal_alignment(Horizontal::Center),
+                )
+                .padding(10)
+                .width(Length::FillPortion(1))
+                .on_press(Message::AskInstallation)
+                .style(theme::Button::Suggested)
+                .into(),
+            )
+        } else {
+            None
+        };
+        let max_width = if install_btn.is_some() { 800 } else { 400 };
+        let header = widget::container(
+            widget::container(
+                widget::row()
+                    .spacing(30)
+                    .push(filechooser_btn)
+                    .push_maybe(install_btn),
+            )
+            .max_width(max_width),
+        )
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
+
+        let mut files_column = widget::list_column();
+
+        for package in self.packages.clone() {
+            files_column = files_column.add(settings::item(
+                package.name.clone(),
+                row()
+                    .push(widget::text(package.path.clone()))
+                    .spacing(28)
+                    .push(
+                        widget::button::standard(fl!("show-details"))
+                            .on_press(Message::ShowDetails(Box::new(package))),
+                    ),
+            ));
+        }
+
+        let files: Option<Element<'_, _>> = if !self.packages.is_empty() {
+            Some(
+                widget::container(widget::container(files_column).max_width(800))
+                    .align_x(Horizontal::Center)
+                    .into(),
+            )
+        } else {
+            None
+        };
+
+        let content = widget::column()
+            .spacing(16)
+            // .push(header)
+            .push_maybe(self.progress().or(Some(header.into())))
+            .push_maybe(files)
+            .push_maybe(self.details());
+
+        widget::container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Center)
+            .into()
+    }
 }
 
 impl AppModel {
@@ -469,9 +468,11 @@ impl AppModel {
     }
     pub fn progress(&self) -> Option<Element<Message>> {
         self.progress.map(|progress| {
-            widget::container(widget::container(ProgressBar::new(0.0..=100.0, progress))
-                .max_width(800)).align_x(Horizontal::Center)
-                .into()
+            widget::container(
+                widget::container(ProgressBar::new(0.0..=100.0, progress)).max_width(800),
+            )
+            .align_x(Horizontal::Center)
+            .into()
         })
     }
 }
