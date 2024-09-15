@@ -1,6 +1,4 @@
-use zbus::blocking::Connection;
-
-use crate::packagekit::{PackageKitModifyProxyBlocking, TransactionDetails};
+use crate::packagekit::{PackageKit, TransactionDetails};
 
 #[derive(Debug, Clone)]
 pub struct Package {
@@ -38,20 +36,20 @@ impl Package {
     }
 }
 
-pub fn install_packages_local(packages: Vec<Package>) -> anyhow::Result<bool> {
-    let conn = Connection::session()?;
-
+pub fn install_packages_local(
+    packages: Vec<Package>,
+    f: Box<dyn FnMut(u32) + 'static>,
+) -> anyhow::Result<bool> {
     let mut paths = Vec::with_capacity(packages.len());
 
     packages
         .iter()
         .for_each(|package| paths.push(package.path.as_str()));
 
-    for path in paths {
-        if let Ok(proxy) = PackageKitModifyProxyBlocking::new(&conn) {
-            proxy.install_package_files(0, &[path], "hide-confirm-search,hide-confirm-deps,hide-confirm-install,hide-progress,hide-finished,hide-warning")?;
-        }
+    let proxy = PackageKit::new()?;
+    if proxy.install_packages_files(&paths, f).is_ok() {
+        Ok(true)
+    } else {
+        Ok(false)
     }
-
-    Ok(true)
 }

@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
+use anyhow::anyhow;
 use packagekit_zbus::{
     zbus::{blocking::Connection, zvariant},
     PackageKit::PackageKitProxyBlocking,
     Transaction::TransactionProxyBlocking,
 };
-use zbus::proxy;
 
 #[derive(Debug)]
 pub struct TransactionDetails {
@@ -17,15 +17,30 @@ pub struct TransactionDetails {
     pub size: String,
 }
 
+// https://github.com/PackageKit/PackageKit/blob/209aa62950e503494716fd046f8f5cb546bf57d4/lib/packagekit-glib2/pk-enum.h#L776-L798
+#[allow(dead_code)]
+#[repr(u64)]
+enum TransactionFlag {
+    None = 1 << 0,
+    OnlyTrusted = 1 << 1,
+    Simulate = 1 << 2,
+    OnlyDownload = 1 << 3,
+    AllowReinstall = 1 << 4,
+    JustReinstall = 1 << 5,
+    AllowDowngrade = 1 << 6,
+    Last = 1 << 7,
+}
+
+#[derive(Debug)]
 pub struct PackageKit {
     connection: Connection,
 }
 
 impl PackageKit {
-    pub fn new() -> Self {
-        let conn = Connection::system().unwrap();
+    pub fn new() -> anyhow::Result<Self> {
+        let conn = Connection::system()?;
 
-        Self { connection: conn }
+        Ok(Self { connection: conn })
     }
 
     pub fn _proxy(&self) -> anyhow::Result<PackageKitProxyBlocking> {
@@ -42,9 +57,28 @@ impl PackageKit {
 
         Ok(tx)
     }
+
+    pub fn install_packages_files(
+        &self,
+        files: &[&str],
+        mut f: Box<dyn FnMut(u32) + 'static>,
+    ) -> anyhow::Result<()> {
+        let tx = self.transaction()?;
+        tx.set_hints(&["interactive=true"])?;
+        tx.set_hints(&["supports-plural-signals=true"])?;
+        println!("installing packages {:?}", files);
+        tx.install_files(TransactionFlag::None as u64, &files)?;
+        let _tx_packages = transaction_handle(tx, |total_percentage| {
+            f(total_percentage);
+        })?;
+        Ok(())
+    }
 }
 
-pub fn transaction_handle(tx: TransactionProxyBlocking) -> anyhow::Result<Vec<TransactionDetails>> {
+pub fn transaction_handle(
+    tx: TransactionProxyBlocking,
+    mut on_progress: impl FnMut(u32),
+) -> anyhow::Result<Vec<TransactionDetails>> {
     let mut details = Vec::new();
 
     for signal in tx.receive_all_signals()? {
@@ -93,8 +127,20 @@ pub fn transaction_handle(tx: TransactionProxyBlocking) -> anyhow::Result<Vec<Tr
                 "ErrorCode" => {
                     // https://www.freedesktop.org/software/PackageKit/gtk-doc/Transaction.html#Transaction::ErrorCode
                     let (code, details) = signal.body::<(u32, String)>()?;
-                    println!("{details} (code {code})");
-                    break;
+                    return Err(anyhow!("{details} (error code {code})"));
+                }
+                "ItemProgress" => {
+                    // https://www.freedesktop.org/software/PackageKit/gtk-doc/Transaction.html#Transaction::ItemProgress
+                    let (package_id, status, percentage) = signal.body::<(String, u32, u32)>()?;
+                    println!("Status {status} {} {percentage}", package_id);
+                    let total_percentage = tx.percentage().unwrap_or(percentage);
+                    on_progress(total_percentage)
+                }
+                "Package" => {
+                    // https://www.freedesktop.org/software/PackageKit/gtk-doc/Transaction.html#Transaction::Package
+                    let (info, package_id, _summary) = signal.body::<(u32, String, String)>()?;
+
+                    println!("Info {info} {}", package_id);
                 }
                 "Finished" => {
                     break;
@@ -106,18 +152,4 @@ pub fn transaction_handle(tx: TransactionProxyBlocking) -> anyhow::Result<Vec<Tr
         }
     }
     Ok(details)
-}
-
-#[proxy(
-    interface = "org.freedesktop.PackageKit.Modify",
-    default_service = "org.freedesktop.PackageKit",
-    default_path = "/org/freedesktop/PackageKit"
-)]
-trait PackageKitModify {
-    fn install_package_files(
-        &self,
-        xid: u32,
-        files: &[&str],
-        interaction: &str,
-    ) -> zbus::Result<()>;
 }
