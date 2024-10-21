@@ -1,0 +1,16 @@
+app-title = Wizard
+about = Om
+view = Visa
+select-file = Lägg till installationsprogram
+install-file = Installera alla
+show-details = Visa detaljer
+package-file = Paketfil
+id = Id
+name = Namn
+version = Version
+architecture = Arkitektur
+summary = Sammanfattning
+description = Beskrivning
+url = Url
+license = Licens
+size = Storlek
